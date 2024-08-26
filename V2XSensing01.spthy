@@ -1,0 +1,124 @@
+theory IVN begin
+
+// Solution 1
+
+builtins:hashing,symmetric-encryption 
+functions: HMAC/2, fst/1, h1/1, h2/1, pair/2, sdec/2, senc/2, snd/1
+equations:
+    fst(<x.1, x.2>) = x.1,
+    sdec(senc(x.1, x.2), x.2) = x.1,
+    snd(<x.1, x.2>) = x.2
+
+rule Reveal:
+  [ Fr(~n) ] --[ Reveal(~n) ]-> [ Out(~n) ]
+
+rule Setup:
+[] 
+--[Setup()]-> 
+[UEA_init($UEA),UEB_init($UEB), 
+  RAN_init($RAN),AMF_init($AMF)]
+
+/* Channel rules */
+
+rule ChanOut_S:
+        [ Out_S($A,$B,x) ]
+      --[ ChanOut_S($A,$B,x) ]->
+        [ Sec($A,$B,x) ]
+
+rule ChanIn_S:
+        [ Sec($A,$B,x) ]
+      --[ ChanIn_S($A,$B,x) ]->
+        [ In_S($A,$B,x) ]
+
+/* Protocol */
+
+rule UEA_1: 
+    [ UEA_init($UEA),Fr(~n) ]
+    --[ Send($UEA,$AMF,~n), Secret_UEA(~n) ]-> 
+    [ Out_S($UEA,$AMF,~n),UEA_1($UEA,~n) ]
+        
+rule AMF_1:
+    [ AMF_init($AMF),In_S($UEA,$AMF,~n)  ]
+    --[ Recv($AMF,$UEA,~n), Secret_AMF(~n), Authentic($UEA,~n) ]->
+    [AMF_1($AMF,~n) ]
+        
+rule RAN_1:
+    [ Fr(~n), RAN_init($RAN) ]
+    --[ Send($RAN,$UEA,~n), Secret_RAN(~n), Authentic($RAN,~n) ]->
+    [ Out_S($RAN,$UEA,~n),RAN_1($RAN) ]
+
+rule UEA_2:
+        [ UEA_1($UEA,~n),In_S($RAN,$UEA,~n) ]
+      --[ Recv($UEA,$RAN,~n),Secret_UEA(~n), Authentic($RAN,~n) ]->
+        [ UEA_2($UEA,~n) ]   
+
+rule RAN_2:
+    [ Fr(~n), RAN_1($RAN) ]
+    --[ Send($RAN,$UEB,~n), Secret_RAN(~n), Authentic($RAN,~n) ]->
+    [ Out_S($RAN,$UEB,~n) ]    
+
+rule UEB_1:
+        [ UEB_init($UEB),In_S($RAN,$UEB,~n) ]
+      --[ Recv($UEB,$RAN,~n), Secret_UEB(~n), Authentic($RAN,~n) ]->
+        [ UEB_1($UEB,~n) ] 
+
+rule UEB_2:
+        [ Fr(~n),UEB_1($UEB,~n)]
+      --[ Send($UEB,$AMF,~n), Secret_UEB(~n), Authentic($UEB,~n) ]->
+        [ Out_S($UEB,$AMF,~n), UEB_2($UEB,~n) ] 
+
+rule AMF_2:
+    [ AMF_1($AMF,~n),In_S($UEB,$AMF,~n)  ]
+    --[ Recv($AMF,$UEB,~n), Secret_AMF(~n), Authentic($UEB,~n) ]->
+    [AMF_2($AMF,~n) ]
+
+rule AMF_3:
+    [ Fr(~n),AMF_2($AMF,~n)  ]
+    --[ Send($AMF,$UEA,~n), Secret_AMF(~n), Authentic($AMF,~n) ]->
+    [AMF_3($AMF,~n), Out_S($AMF,$UEA,~n) ]
+
+rule UEA_3:
+        [ UEA_2($UEA,~n),In_S($AMF,$UEA,~n) ]
+      --[ Recv($UEA,$AMF,~n),Secret_UEA(~n), Authentic($AMF,~n) ]->
+        [ UEA_3($UEA,~n) ] 
+
+restriction OneSetup: 
+  "All #i #j. Setup() @i & Setup() @j ==> #i = #j "
+
+lemma Secrecy_UEA:
+"All n #i. Secret_UEA(n) @i ==>(not(Ex #j. K(n) @j))"
+
+lemma Secrecy_UEB:
+"All n #i. Secret_UEA(n) @i ==>(not(Ex #j. K(n) @j))"
+
+lemma Secrecy_RAN:
+"All n #i. Secret_RAN(n) @i ==>(not(Ex #j. K(n) @j))"
+
+lemma Secrecy_AMF:
+"All n #i. Secret_AMF(n) @i ==>(not(Ex #j. K(n) @j))"
+
+lemma Executable:
+exists-trace
+"Ex A B m #i #j. Send(A,B,m)@i & Recv(B,A,m)@j"
+
+lemma weak_agreement:
+  "All a b t1 #i.
+    Recv(a,b,t1) @i
+    ==> (Ex t2 #j. Send(b,a,t2) @j)
+        | (Ex C n #r. Reveal(n) @ r & Authentic(C,n) @ i)"
+
+lemma noninjective_agreement:
+  "All a b t #i.
+    Recv(a,b,t) @i
+    ==> (Ex #j. Send(b,a,t) @j)
+        | (Ex C n#r. Reveal(n) @ r & Authentic(C,n) @ i)"
+
+lemma Injectiveagreement: 
+ " (All A B n #i .
+Recv(B,A,n) @#i 
+==> (Ex A #j . Send(A,B,n)@#j
+& #j < #i) 
+& (not (Ex #j . Recv(B,A,n) @ #j
+& not (#i = #j))))"
+
+end
